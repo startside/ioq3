@@ -23,6 +23,51 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+/*
+Startside: in the browser there is no UDP. The game's servers are reached through the page's WebSockets (the Startside
+server's bridge), each at an address of 192.0.2.0/24 (a documentation range no real host has), port 27960: the last
+number is a slot, which the page maps to a match (1: the arena, 3 to 254: players' matches). A packet sent there
+goes to Module.netSend(bytes, slot); a broadcast on the game's first port (the server list's "Local" query) goes as
+slot 0, which the page asks of every match. The packets the page received wait in Module.netQueue ({ data, slot }), read
+at each frame, as coming from that slot's address. Packets to any other address go nowhere.
+*/
+#define NET_BRIDGE_IP0 192
+#define NET_BRIDGE_IP1 0
+#define NET_BRIDGE_IP2 2
+#define NET_BRIDGE_PORT 27960
+
+EM_JS(void, Startside_NetSend, (const void *data, int length, int slot), {
+	if (Module.netSend) Module.netSend(HEAPU8.slice(data, data + length), slot);
+});
+
+EM_JS(int, Startside_NetRecv, (void *data, int maxsize, int *slot), {
+	var queue = Module.netQueue;
+	if (!queue || !queue.length) return -1;
+	var packet = queue.shift();
+	if (packet.data.length > maxsize) return 0;
+	HEAPU8.set(packet.data, data);
+	HEAP32[slot >> 2] = packet.slot;
+	return packet.data.length;
+});
+
+/* The slot of a bridge address (1 to 254), 0 for the Local query's broadcast, -1 for anything else. */
+static int Startside_Slot( netadr_t *adr ) {
+	if ( adr->port != BigShort( NET_BRIDGE_PORT ) ) {
+		return -1;
+	}
+	if ( adr->type == NA_BROADCAST ) {
+		return 0;
+	}
+	if ( adr->type == NA_IP && adr->ip[0] == NET_BRIDGE_IP0 && adr->ip[1] == NET_BRIDGE_IP1
+		&& adr->ip[2] == NET_BRIDGE_IP2 && adr->ip[3] >= 1 && adr->ip[3] <= 254 ) {
+		return adr->ip[3];
+	}
+	return -1;
+}
+#endif
+
 #ifdef _WIN32
 #	include <winsock2.h>
 #	include <ws2tcpip.h>
@@ -367,6 +412,25 @@ qboolean Sys_StringToAdr( const char *s, netadr_t *a, netadrtype_t family ) {
 	struct sockaddr_storage sadr;
 	sa_family_t fam;
 	
+#ifdef __EMSCRIPTEN__
+	{
+		// no name lookup in the browser (Emscripten's getaddrinfo refused even a numeric address): IPv4 numbers only
+		int b0, b1, b2, b3;
+		char rest;
+		if ( family == NA_IP6 || sscanf( s, "%d.%d.%d.%d%c", &b0, &b1, &b2, &b3, &rest ) != 4
+			|| b0 < 0 || b0 > 255 || b1 < 0 || b1 > 255 || b2 < 0 || b2 > 255 || b3 < 0 || b3 > 255 ) {
+			return qfalse;
+		}
+		Com_Memset( a, 0, sizeof( *a ) );
+		a->type = NA_IP;
+		a->ip[0] = b0;
+		a->ip[1] = b1;
+		a->ip[2] = b2;
+		a->ip[3] = b3;
+		return qtrue;
+	}
+#endif
+
 	switch(family)
 	{
 		case NA_IP:
@@ -534,6 +598,29 @@ qboolean NET_GetPacket(netadr_t *net_from, msg_t *net_message, fd_set *fdr)
 	socklen_t	fromlen;
 	int		err;
 	
+#ifdef __EMSCRIPTEN__
+	while ( 1 ) {
+		int slot = 0;
+		ret = Startside_NetRecv( net_message->data, net_message->maxsize, &slot );
+		if ( ret < 0 ) {
+			return qfalse;
+		}
+		if ( ret == 0 || ret >= net_message->maxsize || slot < 1 || slot > 254 ) {
+			continue;	// empty, oversize or from no slot: dropped
+		}
+		Com_Memset( net_from, 0, sizeof( *net_from ) );
+		net_from->type = NA_IP;
+		net_from->ip[0] = NET_BRIDGE_IP0;
+		net_from->ip[1] = NET_BRIDGE_IP1;
+		net_from->ip[2] = NET_BRIDGE_IP2;
+		net_from->ip[3] = slot;
+		net_from->port = BigShort( NET_BRIDGE_PORT );
+		net_message->readcount = 0;
+		net_message->cursize = ret;
+		return qtrue;
+	}
+#endif
+
 	if(ip_socket != INVALID_SOCKET && FD_ISSET(ip_socket, fdr))
 	{
 		fromlen = sizeof(from);
@@ -650,6 +737,16 @@ Sys_SendPacket
 void Sys_SendPacket( int length, const void *data, netadr_t to ) {
 	int				ret = SOCKET_ERROR;
 	struct sockaddr_storage	addr;
+
+#ifdef __EMSCRIPTEN__
+	{
+		int slot = Startside_Slot( &to );
+		if ( slot >= 0 ) {
+			Startside_NetSend( data, length, slot );
+		}
+	}
+	return;
+#endif
 
 	if( to.type != NA_BROADCAST && to.type != NA_IP && to.type != NA_IP6 && to.type != NA_MULTICAST6)
 	{
@@ -1665,6 +1762,13 @@ void NET_Sleep(int msec)
 	fd_set fdr;
 	int retval;
 	SOCKET highestfd = INVALID_SOCKET;
+
+#ifdef __EMSCRIPTEN__
+	// the browser's loop sleeps for us: only the packets waiting
+	FD_ZERO(&fdr);
+	NET_Event(&fdr);
+	return;
+#endif
 
 	if(msec < 0)
 		msec = 0;
