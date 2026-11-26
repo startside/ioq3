@@ -27,6 +27,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../sys/sys_local.h"
 #include "../sys/sys_loadlib.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
 #endif
@@ -3111,6 +3115,19 @@ void CL_Frame ( int msec ) {
 	SCR_RunCinematic();
 
 	Con_RunConsole();
+
+#ifdef __EMSCRIPTEN__
+	{
+		// Startside: the page told when it may restart the renderer at a new size (vid_restart), which resets the menus
+		// and would break a map loading: only in a match, no menu shown.
+		static int calm = -1;
+		int now = clc.state == CA_ACTIVE && !( Key_GetCatcher( ) & KEYCATCH_UI );
+		if ( now != calm ) {
+			calm = now;
+			EM_ASM( { if ( Module.onCalm ) Module.onCalm( !!$0 ); }, now );
+		}
+	}
+#endif
 
 	cls.framecount++;
 }
