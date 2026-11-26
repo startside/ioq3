@@ -811,5 +811,11 @@ void UI_InitGameinfo( void ) {
 	UI_LoadArenas();
 	UI_LoadBots();
 
-	uis.demoversion = qfalse;
+	// Startside: the demo's data (com_basegame demoq3) is the demo, as the original told it (its four arenas): no CD
+	// key asked, the demo's own menus.
+	{
+		char	basegame[MAX_CVAR_VALUE_STRING];
+		trap_Cvar_VariableStringBuffer( "com_basegame", basegame, sizeof( basegame ) );
+		uis.demoversion = !Q_stricmp( basegame, "demoq3" );
+	}
 }
