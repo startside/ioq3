@@ -31,6 +31,20 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <emscripten/emscripten.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+/*
+==================
+CL_StartsideHost_f
+
+Startside: the Create menu's match (ui_startserver.c), its settings an info string, handed to the page, which starts it
+on the Startside server and connects the game to it.
+==================
+*/
+static void CL_StartsideHost_f( void ) {
+	EM_ASM( { if ( Module.onHost ) Module.onHost( UTF8ToString( $0 ) ); }, Cmd_Argv( 1 ) );
+}
+#endif
+
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
 #endif
@@ -3758,6 +3772,9 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("model", CL_SetModel_f );
 	Cmd_AddCommand ("video", CL_Video_f );
 	Cmd_AddCommand ("stopvideo", CL_StopVideo_f );
+#ifdef __EMSCRIPTEN__
+	Cmd_AddCommand ("startside_host", CL_StartsideHost_f );
+#endif
 	if( !com_dedicated->integer ) {
 		Cmd_AddCommand ("sayto", CL_Sayto_f );
 		Cmd_SetCommandCompletionFunc( "sayto", CL_CompletePlayerName );
@@ -3812,6 +3829,9 @@ void CL_Shutdown(char *finalmsg, qboolean disconnect, qboolean quit)
 	CL_HTTP_Shutdown();
 #endif
 
+#ifdef __EMSCRIPTEN__
+	Cmd_RemoveCommand ("startside_host");
+#endif
 	Cmd_RemoveCommand ("cmd");
 	Cmd_RemoveCommand ("configstrings");
 	Cmd_RemoveCommand ("clientinfo");

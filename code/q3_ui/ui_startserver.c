@@ -779,6 +779,44 @@ static void ServerOptions_Start( void ) {
 		break;
 	}
 
+	// Startside: online, the match runs on the Startside server, where every player's game lists it, not inside this
+	// browser, where nobody could reach it. Its settings go to the page as an info string (Info_SetValueForKey refuses
+	// a value holding \, ; or ": nothing breaks out of the quoted argument), the page starts the match and connects
+	// the game to it; the menu stays until then. No cvar of a local server touched, the menu's own remembered above.
+	if ( s_serveroptions.multiplayer && trap_Cvar_VariableValue( "ui_startsideHost" ) ) {
+		char	hostinfo[MAX_INFO_STRING];
+		char	bots[MAX_INFO_STRING];
+
+		hostinfo[0] = 0;
+		bots[0] = 0;
+		for( n = 1; n < PLAYER_SLOTS; n++ ) {
+			if( s_serveroptions.playerType[n].curvalue != 1 || s_serveroptions.playerNameBuffers[n][0] == 0 ||
+				s_serveroptions.playerNameBuffers[n][0] == '-' ) {
+				continue;
+			}
+			if( bots[0] ) {
+				Q_strcat( bots, sizeof( bots ), " " );
+			}
+			Q_strcat( bots, sizeof( bots ), s_serveroptions.playerNameBuffers[n] );
+			if( s_serveroptions.gametype >= GT_TEAM ) {
+				Q_strcat( bots, sizeof( bots ), va( ":%s", playerTeam_list[s_serveroptions.playerTeam[n].curvalue] ) );
+			}
+		}
+		info = UI_GetArenaInfoByNumber( s_startserver.maplist[ s_startserver.currentmap ]);
+		Info_SetValueForKey( hostinfo, "map", Info_ValueForKey( info, "map" ) );
+		Info_SetValueForKey( hostinfo, "gametype", va( "%i", s_serveroptions.gametype ) );
+		Info_SetValueForKey( hostinfo, "skill", va( "%i", skill ) );
+		Info_SetValueForKey( hostinfo, "timelimit", va( "%i", timelimit ) );
+		Info_SetValueForKey( hostinfo, "fraglimit", va( "%i", fraglimit ) );
+		Info_SetValueForKey( hostinfo, "capturelimit", va( "%i", flaglimit ) );
+		Info_SetValueForKey( hostinfo, "friendlyfire", va( "%i", friendlyfire ) );
+		Info_SetValueForKey( hostinfo, "maxclients", va( "%i", maxclients ) );
+		Info_SetValueForKey( hostinfo, "hostname", s_serveroptions.hostname.field.buffer );
+		Info_SetValueForKey( hostinfo, "bots", bots );
+		trap_Cmd_ExecuteText( EXEC_APPEND, va( "startside_host \"%s\"\n", hostinfo ) );
+		return;
+	}
+
 	trap_Cvar_SetValue( "sv_maxclients", Com_Clamp( 0, 12, maxclients ) );
 	trap_Cvar_SetValue( "dedicated", Com_Clamp( 0, 2, dedicated ) );
 	trap_Cvar_SetValue ("timelimit", Com_Clamp( 0, timelimit, timelimit ) );
@@ -1469,6 +1507,12 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.timelimit );
 	if( s_serveroptions.gametype >= GT_TEAM ) {
 		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.friendlyfire );
+	}
+	// Startside: a match on the Startside server is never dedicated here, pure or under Punkbuster: rows hidden.
+	if( s_serveroptions.multiplayer && trap_Cvar_VariableValue( "ui_startsideHost" ) ) {
+		s_serveroptions.pure.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		s_serveroptions.dedicated.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		s_serveroptions.punkbuster.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 	}
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.pure );
 	if( s_serveroptions.multiplayer ) {
