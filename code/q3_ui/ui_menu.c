@@ -273,15 +273,8 @@ void UI_MainMenu( void ) {
 
 	trap_Cvar_Set( "sv_killserver", "1" );
 
-	if( !uis.demoversion && !ui_cdkeychecked.integer ) {
-		char	key[17];
-
-		trap_GetCDKey( key, sizeof(key) );
-		if( trap_VerifyCDKey( key, NULL ) == qfalse ) {
-			UI_CDKeyMenu();
-			return;
-		}
-	}
+	// Startside: no CD key asked. It was for id's authorization server, long gone, and the player brings their own
+	// game's files (or the free demo's).
 	
 	memset( &s_main, 0 ,sizeof(mainmenu_t) );
 	memset( &s_errorMessage, 0 ,sizeof(errorMessage_t) );
