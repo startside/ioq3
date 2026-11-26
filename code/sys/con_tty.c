@@ -484,6 +484,13 @@ char *CON_Input( void )
 		if (len == 0)
 		{ // eof!
 			stdin_active = qfalse;
+			// Startside: a game server started by another program (its stdin a pipe from it) ends as that program
+			// goes, however it goes: the pipe closes.
+			if (Cvar_VariableIntegerValue("com_quitOnStdinEof"))
+			{
+				Q_strncpyz(text, "quit", sizeof(text));
+				return text;
+			}
 			return NULL;
 		}
 
