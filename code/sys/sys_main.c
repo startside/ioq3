@@ -318,6 +318,12 @@ static Q_NO_RETURN void Sys_Exit( int exitCode )
 
 	Sys_PlatformExit( );
 
+#ifdef __EMSCRIPTEN__
+	// Startside: the page told the game ended (its menu's Exit, or an error). Emscripten's own onExit never comes while
+	// the main loop keeps the program alive.
+	EM_ASM( { if ( Module.onQuit ) Module.onQuit( $0 ); }, exitCode );
+#endif
+
 	exit( exitCode );
 }
 
